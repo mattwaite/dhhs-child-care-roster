@@ -1,9 +1,9 @@
 name: Monthly Child Care Roster Download
 
 on:
-  # Run at noon UTC on the 15th of each month
+  # Run at noon UTC on the 16th of each month
   schedule:
-    - cron: '0 12 15 * *'
+    - cron: '0 12 16 * *'
 
   # Allow manual trigger
   workflow_dispatch:
