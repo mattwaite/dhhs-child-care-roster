@@ -33,11 +33,18 @@ python download_and_parse.py
 
 Install with: `pip install -r requirements.txt`
 
+### Running consistency tests standalone
+```bash
+# Test parsing against an existing PDF
+python test_parse_consistency.py pdfs/ChildCareRoster_YYYY-MM-DD.pdf
+```
+
 ## Directory Structure
 
 ```
 ├── parse_childcare_roster.py   # Core parsing logic
 ├── download_and_parse.py       # Download and orchestration script
+├── test_parse_consistency.py   # Data consistency tests
 ├── requirements.txt            # Python dependencies
 ├── data/                       # CSV output files (dated)
 ├── pdfs/                       # Archived PDF files (dated)
@@ -77,8 +84,15 @@ The workflow:
 
 **Orchestration script** (`download_and_parse.py`):
 - Downloads PDF from DHHS website
+- Runs consistency tests before writing CSV (fails if tests don't pass)
 - Saves dated copies of PDF and CSV files
 - Passes download date to parser for inclusion in CSV records
+
+**Consistency tests** (`test_parse_consistency.py`):
+- **Parsing determinism**: Verifies parsing the same PDF twice produces identical results
+- **Data quality**: Validates license numbers, phone formats, dates, ZIP codes match expected patterns
+- **Field completeness**: Ensures key fields (License_Number, Provider_Name, Zip_Code, County, License_Type, Capacity) are populated at 90%+ rate
+- Tests are automatically run by `download_and_parse.py` and block CSV output if they fail
 
 ## Key Patterns
 

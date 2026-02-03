@@ -19,6 +19,7 @@ from datetime import date
 from pathlib import Path
 
 from parse_childcare_roster import extract_providers_from_pdf, write_csv
+from test_parse_consistency import run_all_tests
 
 
 # URL for the Child Care Roster PDF
@@ -75,6 +76,22 @@ def main():
     # Parse the PDF
     print(f"Parsing {pdf_path}...")
     providers = extract_providers_from_pdf(pdf_path, download_date=date_str)
+
+    # Run consistency tests
+    print()
+    passed, test_result = run_all_tests(
+        pdf_path,
+        providers,
+        parse_func=extract_providers_from_pdf,
+        download_date=date_str
+    )
+    print()
+    print(test_result)
+    print()
+
+    if not passed:
+        print("ERROR: Consistency tests failed. CSV not written.")
+        sys.exit(1)
 
     # Write the CSV
     write_csv(providers, csv_path)
