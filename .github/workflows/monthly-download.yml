@@ -1,0 +1,48 @@
+name: Monthly Child Care Roster Download
+
+on:
+  # Run at noon UTC on the 15th of each month
+  schedule:
+    - cron: '0 12 15 * *'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  download-and-parse:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download and parse roster
+        run: python download_and_parse.py
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and push changes
+        run: |
+          git add data/ pdfs/
+
+          # Check if there are changes to commit
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add child care roster data for $(date +%Y-%m-%d)"
+            git push
+          fi

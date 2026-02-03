@@ -169,12 +169,13 @@ def clean_provider_name(name):
     return name.strip()
 
 
-def parse_provider_block(lines, current_zip, current_county):
+def parse_provider_block(lines, current_zip, current_county, download_date=''):
     """
     Parse a block of lines representing a single provider.
     Returns a dictionary with provider data.
     """
     provider = {
+        'Download_Date': download_date,
         'Zip_Code': current_zip,
         'County': current_county,
         'Provider_Name': '',
@@ -305,9 +306,13 @@ def is_zip_header(line):
     return match
 
 
-def extract_providers_from_pdf(pdf_path):
+def extract_providers_from_pdf(pdf_path, download_date=''):
     """
     Extract all provider records from the PDF.
+
+    Args:
+        pdf_path: Path to the PDF file to parse.
+        download_date: Optional date string (YYYY-MM-DD) to include in each record.
 
     Returns a list of dictionaries, one per provider.
     """
@@ -386,7 +391,7 @@ def extract_providers_from_pdf(pdf_path):
                         lines_collected += 1
 
                     # Parse the provider block
-                    provider = parse_provider_block(provider_lines, current_zip, current_county)
+                    provider = parse_provider_block(provider_lines, current_zip, current_county, download_date)
                     if provider['Provider_Name'] or provider['License_Number']:
                         providers.append(provider)
                 else:
@@ -400,9 +405,9 @@ def write_csv(providers, output_path):
     Write providers to CSV file.
     """
     fieldnames = [
-        'Zip_Code', 'County', 'Provider_Name', 'License_Number', 'License_Type',
-        'Owner_Name', 'Effective_Date', 'Address', 'City', 'State', 'Phone',
-        'Capacity', 'Ages', 'Hours', 'Days_Open',
+        'Download_Date', 'Zip_Code', 'County', 'Provider_Name', 'License_Number',
+        'License_Type', 'Owner_Name', 'Effective_Date', 'Address', 'City', 'State',
+        'Phone', 'Capacity', 'Ages', 'Hours', 'Days_Open',
         'Currently_Accepts_Subsidy', 'Willing_To_Accept_Subsidy',
         'Does_Not_Accept_Subsidy', 'Step_Up_Quality', 'Accredited'
     ]
