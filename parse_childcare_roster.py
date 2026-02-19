@@ -20,6 +20,13 @@ import sys
 from pathlib import Path
 
 
+# Words that appear as organization-type prefixes in owner names but are never
+# the start of a Nebraska city name; stripped from extracted city values.
+_NON_CITY_PREFIXES = frozenset({
+    'ASSOCIATION', 'SOCIETY', 'SYNOD', 'NATIONAL', 'CHURCH',
+    'FOUNDATION', 'PROGRAM', 'SCHOOL',
+})
+
 # License type patterns
 LICENSE_PATTERNS = {
     'FII': 'Family Child Care Home II',
@@ -103,13 +110,33 @@ def extract_city_state_zip(text):
     """
     Extract city, state, zip from text like 'Arlington NE 68002'.
     """
+    # Pre-process: normalise common PDF text artifacts before regex matching.
+
+    # Remove period between an uppercase letter and a directly following lowercase
+    # letter.  This handles the dotted-abbreviation+city concatenation artifact
+    # produced by pdfplumber on this PDF, e.g. "L.L.CL.exington" step 1:
+    # 'L'+'.'+'e' at the LLC/city boundary -> "L.L.CLexington".
+    # (No word-boundary anchor so we catch the case where 'L' follows directly
+    # after another word-char such as after 'C' in "L.L.CL.exington".)
+    text = re.sub(r'([A-Z])\.([a-z])', r'\1\2', text)
+
+    # Normalize dotted LLC form: "L.L.C." / "L.L.C" -> "LLC"
+    # Must run after the period-removal step above so "L.L.CLexington"
+    # (produced by the previous step) becomes "LLCLexington".
+    text = re.sub(r'\bL\.L\.C\.?', 'LLC', text)
+
+    # Split ALL-CAPS text that is directly concatenated with a Title-Case word
+    # (PDF column-merge artifact), e.g. "CHRISTOmaha" -> "CHRIST Omaha"
+    text = re.sub(r'([A-Z]{2,})([A-Z][a-z])', r'\1 \2', text)
+
+    # Split business suffix concatenated directly with a Title-Case city name,
+    # e.g. "LLCSeward" -> "LLC Seward"
+    text = re.sub(r'\b(LLC|INC|CORP|LTD)([A-Z][a-z])', r'\1 \2', text)
+
     # Pattern: City Name NE ZIPCODE
-    # City names typically are 1-3 words, don't include NEBRASKA
     match = re.search(r'\b([A-Za-z][A-Za-z\s\.]{0,30}?)\s+NE\s+(\d{5})\b', text)
     if match:
-        city = match.group(1).strip()
-        # Don't include "NEBRASKA" as part of city name
-        city = re.sub(r'\bNEBRASKA\b', '', city, flags=re.IGNORECASE).strip()
+        city = _clean_city(match.group(1).strip())
         if city:
             return city, 'NE', match.group(2)
     return '', '', ''
@@ -167,6 +194,69 @@ def clean_provider_name(name):
     name = re.sub(r'\s+owned\s*$', '', name, flags=re.IGNORECASE)
     name = re.sub(r'\s+ob\s*$', '', name, flags=re.IGNORECASE)  # partial "owned by" -> "ob"
     return name.strip()
+
+
+def _clean_city(city):
+    """
+    Remove spurious prefix text from an extracted city string.
+
+    The PDF has a multi-column layout (owner name | date | city/state/zip) that
+    pdfplumber merges onto one line.  The city regex can therefore capture owner
+    name fragments before the real city.  This function strips them.
+    """
+    if not city:
+        return city
+
+    # Fix ALL-CAPS text concatenated directly with a Title-Case word (PDF column
+    # merge artifact).  e.g. "CHRISTOmaha" -> "CHRIST Omaha"
+    city = re.sub(r'([A-Z]{2,})([A-Z][a-z])', r'\1 \2', city)
+
+    # Fix business suffix concatenated directly with city (no space).
+    # e.g. "LLCSeward" -> "LLC Seward"
+    city = re.sub(r'\b(LLC|INC|CORP|LTD)([A-Z][a-z])', r'\1 \2', city)
+
+    # Strip standalone NEBRASKA/NEBR... prefix (any case, followed by whitespace).
+    # e.g. "NEBRAKSA North Platte" -> "North Platte", "Nebraska LINCOLN" -> "LINCOLN"
+    # Only when followed by whitespace so we don't blank-out concatenated forms
+    # like "NEBRASKASCOTTSBLUFF" that require deeper PDF-parsing fixes.
+    city = re.sub(r'\bNEBR[A-Za-z]+\b(?=\s)', '', city, flags=re.IGNORECASE).strip()
+
+    # Strip business suffixes (whole words, case-insensitive)
+    city = re.sub(r'\b(LLC|INC|CORP|LTD|DBA)\b\.?\s*', '', city, flags=re.IGNORECASE).strip()
+
+    # Strip "CITY OF" or lone "OF" at the start of the city string
+    city = re.sub(r'^(CITY\s+OF|OF)\s+', '', city, flags=re.IGNORECASE).strip()
+
+    # Deduplicate repeated city name (e.g. "COZAD Cozad", "FREMONT Fremont",
+    # "OMAHA OMAHA", "GRAND ISLAND Grand Island").  Keep the last (often
+    # better-cased) occurrence.
+    words = city.split()
+    if len(words) >= 2 and words[0].upper() == words[-1].upper():
+        city = words[-1]
+    elif (len(words) >= 4
+          and ' '.join(w.upper() for w in words[:2]) == ' '.join(w.upper() for w in words[-2:])):
+        city = ' '.join(words[-2:])
+
+    # Strip leading ALL-CAPS words when the trailing word is Title-Case.
+    # e.g. "CENTER Kearney" -> "Kearney",  "CHURCH OF CHRIST Omaha" -> "Omaha"
+    words = city.split()
+    if (len(words) >= 2
+            and words[-1][0].isupper()
+            and len(words[-1]) > 1
+            and words[-1][1].islower()):
+        while len(words) > 1 and re.match(r'^[A-Z][A-Z.]*$', words[0]):
+            words.pop(0)
+        city = ' '.join(words)
+
+    # Strip known organization-type prefix words when they are not the city.
+    # e.g. "ASSOCIATION GRAND ISLAND" -> "GRAND ISLAND",
+    #      "SOCIETY SYRACUSE" -> "SYRACUSE"
+    words = city.split()
+    while len(words) > 1 and words[0].upper() in _NON_CITY_PREFIXES:
+        words.pop(0)
+    city = ' '.join(words)
+
+    return city.strip()
 
 
 def parse_provider_block(lines, current_zip, current_county, download_date=''):
